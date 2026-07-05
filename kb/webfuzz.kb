@@ -1,0 +1,41 @@
+# topic: webfuzz
+# desc: Recon, content discovery, and vhost enumeration command reference.
+
+## nmap-opening-scans
+# tags: recon, nmap, port-scan
+# desc: Standard opening and follow-up nmap scans.
+  nmap -sCV -p- <target>    # full TCP sweep, default scripts + version detection
+  nmap -sCV <target>        # default port set; faster follow-up once ports known
+
+-sC runs default NSE scripts, -sV does service/version detection. -p- is
+all 65535 TCP ports (slow; pair with --min-rate on labs). Note: -sCV is
+unprivileged-friendly (TCP connect) once -A/sudo are dropped.
+
+## gobuster-dir-vhost
+# tags: recon, gobuster, content-discovery, vhost
+# desc: Directory brute-force and virtual-host enumeration with gobuster.
+  gobuster dir   -u http://<target> -w <wordlist>
+  gobuster vhost -u http://<target> -w <wordlist> --append-domain
+
+--append-domain is REQUIRED in gobuster 3.2+ for the Host header to be
+formed correctly in vhost mode; without it the host header is malformed
+and results are wrong/empty.
+
+## ffuf-vhost-fuzz
+# tags: recon, ffuf, vhost, fuzzing
+# desc: Host-header fuzzing with auto-calibration and size filtering.
+  ffuf -u http://<target> -H "Host: FUZZ.<domain>" -w <wordlist> -ac -fs <baseline>
+
+-ac auto-calibrates the wildcard/filter baseline; -fs <baseline> drops
+responses of the wildcard size so only real vhosts surface. Determine the
+baseline size from an initial unfiltered run if -ac alone is noisy.
+
+## dns-zone-transfer
+# tags: recon, dns, axfr
+# desc: Attempt a DNS zone transfer against an authoritative server.
+  dig axfr @<target> <domain>
+
+Try first against any internal/authoritative DNS found during scanning. A
+successful AXFR dumps the whole zone (subdomains, internal hosts) in one
+shot. Usually misconfigured rather than common, but high-value when it
+works.

@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+"""
+hoffa.py — thin $HOME/bin wrapper.
+
+Imports the hoffa package and invokes its CLI. Keep this file minimal; all
+logic lives in the hoffa package (cli / kb / recon).
+
+If hoffa is installed (pip install -e .) this wrapper is optional — the
+console entry point or `python -m hoffa` both work. It exists so the tool
+can be dropped into $HOME/bin alongside the package directory and run
+directly.
+"""
+
+import os
+import sys
+
+# Allow running directly from a checkout: ensure the directory containing the
+# hoffa package is importable even when this wrapper is symlinked into ~/bin.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from hoffa.cli import main
+
+if __name__ == "__main__":
+    main()

