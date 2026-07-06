@@ -2,6 +2,14 @@
 # Precedence: built-in defaults < this file < command-line flags.
 # Any key omitted here falls back to the script default.
 
+# [scope] — engagement allowlist. FAIL-CLOSED: with no allow entries, hoffa
+# refuses every target. Declare authorized CIDRs / hosts before running.
+# A bare domain permits its subdomains (example.com -> app.example.com).
+# Hostname targets are NOT resolved against CIDR entries (DNS must not
+# control scope). Uncomment and set per engagement:
+# [scope]
+# allow = ["10.10.10.0/24", "192.168.56.0/24", "target.example.com"]
+
 [general]
 outdir = "."
 

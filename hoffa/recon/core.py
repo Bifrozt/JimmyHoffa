@@ -38,7 +38,10 @@ WEB_PRODUCT_HINTS = (
 
 # Built-in defaults. Overridden by cfg, then by CLI.
 DEFAULTS = {
-    "outdir": "recon_output",
+    # Output base. Default "." puts <target>/ directly under the current
+    # working directory (engagement-dir-as-context). -o / general.outdir
+    # still override the base.
+    "outdir": ".",
     "dir_wordlist": None,
     "vhost_wordlist": None,
     "rate": 1000,
@@ -120,6 +123,7 @@ class Settings:
     no_web_recon: bool = False
     credentials: list[Credential] = field(default_factory=list)
     exclude_lengths: set[int] = field(default_factory=set)
+    scope_allow: list[str] = field(default_factory=list)
 
     @property
     def null_session(self) -> bool:
@@ -261,6 +265,7 @@ def load_cfg(path: Path) -> tuple[dict, list[Credential]]:
     take("gobuster", "extensions")
     take("gobuster", "max_retries")
     take("gobuster", "skip_vhost")
+    take("scope", "allow", "scope_allow")
 
     creds = _parse_credentials(data.get("cred", []))
     return cfg, creds
@@ -338,6 +343,7 @@ def resolve_settings(args: argparse.Namespace) -> Settings:
         user_agent=merged["user_agent"] or "",
         no_web_recon=bool(args.no_web_recon),
         credentials=creds,
+        scope_allow=list(merged.get("scope_allow") or []),
     )
 
     # Manual -xl override seeds the exclude set.

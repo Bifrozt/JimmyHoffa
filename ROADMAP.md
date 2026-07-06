@@ -5,35 +5,26 @@ post-refactor functional review.
 
 ## High priority
 
-1. **Scope enforcement**
-   - CIDR/host allowlist, cfg-defined, refuse-on-miss.
-   - Tool structurally cannot scan out of scope (TIBER-EU / CBEST requirement).
-   - Port the model already built into the `webrecon/` package.
+1. **Scope enforcement** — DONE (hoffa/recon/scope.py)
+   - CIDR/host allowlist from cfg [scope] allow; fail-closed (empty = refuse
+     all); refuse-on-miss before any stage; exit 2 on refusal.
+   - Hostname targets not resolved against CIDRs (DNS must not control scope).
+   - Bare-domain entry permits subdomains.
 
-2. **Structured run manifest**
-   - Single JSON per run: target, timestamp, args, tool versions,
-     per-stage status, output paths.
-   - Makes runs diffable; enables multi-host orchestration; provenance for
-     regulated deliverables.
+2. **Structured run manifest** — DONE (hoffa/recon/manifest.py)
+   - manifest.json per run: target, timestamps, resolved args (no secrets),
+     tool versions, per-stage status/timing, output paths, scope, final
+     hoffa_status (complete/aborted). Flushed after each stage so an
+     interrupted run leaves a valid partial record.
+   - Folds in item 5 (version capture) — capture_tool_versions().
 
-3. **SMB enumeration handler (PRIO 1 of stage expansion)**
-   - First non-web service handler. Same shape as the stage-3 web loop:
-     take an SMB service (139/445) from parsed nmap output, enumerate,
-     write structured output to the target directory.
-   - Enumeration targets: share listing, null/guest session check, OS/host
-     info, signing status. Authenticated vs. null-session paths.
-   - First real consumer of the existing Credential subsystem (parsed and
-     validated today but unused) — null session vs. authenticated listing.
-   - Build behind a service-class dispatch table (keyed on identified
-     service), not inline. The dispatch table is the seam where the
-     engine/CLI split wants to happen, so this nudges the architecture the
-     right way while delivering a concrete feature.
-   - Capability check at startup: which handlers can run given what's on
-     PATH; feeds the manifest tool-version record. Degrade honestly when a
-     tool is missing rather than silently skipping.
-   - Highest-leverage handler: richest internal-engagement signal, and
-     forces the auth-context + dispatch questions that generalize to the
-     other planned service handlers (DNS, SSH, TLS, SNMP, databases).
+3. **SMB enumeration handler (PRIO 1 of stage expansion)** — SEAM DONE, HANDLER PENDING
+   - Service-class dispatch table implemented (SERVICE_HANDLERS in cli.py);
+     web path ported onto it as _web_handler with a stable handler signature.
+     SMB handler slots in as a new table entry — needs a live SMB service to
+     verify enumeration output, so deferred to hands-on session.
+   - Remaining: share listing, null/guest check, OS/signing info, Credential
+     subsystem consumption, per-handler capability check.
 
 ## Medium priority
 
@@ -42,7 +33,7 @@ post-refactor functional review.
      present and `--resume` set).
    - Matches the resume model in `webrecon/`.
 
-5. **Per-tool version capture**
+5. **Per-tool version capture** — DONE (folded into manifest, item 2)
    - `nmap --version` / `gobuster version` into the manifest.
    - Findings reproducibility for regulated deliverables.
 
@@ -81,16 +72,11 @@ post-refactor functional review.
 - Add `pyproject.toml` so `pip install -e .` works and the `~/bin` wrapper's
   `sys.path` injection stops being load-bearing.
 
-## Output layout
+## Output layout — DONE
 
-- Drop the `recon_output/` wrapper directory. `<target>/` becomes the
-  top-level output directory.
-- Create `<target>/` relative to the current working directory (where
-  hoffa.py is invoked from), not relative to the package or a configured
-  base. Result: `./<target>/` instead of `./recon_output/<target>/`.
-- Removes the `outdir` default of `recon_output` from this path role;
-  revisit whether `general.outdir` / `-o` should still override the base
-  or be retired.
+- `<target>/` is created relative to CWD (outdir default "."), engagement-
+  dir-as-context. `-o` / general.outdir still override the base.
+- recon_output/ wrapper removed from the default path role.
 
 ## Technology fingerprinting (deferred — pending tool evaluation)
 
